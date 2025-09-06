@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Poker Client</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white flex items-center justify-center min-h-screen p-4">
+
+    <div class="bg-slate-800 p-8 rounded-xl shadow-lg w-full max-w-2xl border border-slate-700">
+        <h1 class="text-3xl font-bold mb-6 text-center text-emerald-400">WebSocket Client</h1>
+        
+        <!-- Displays a status message about the game from the server -->
+        <div id="gameStatus" class="bg-blue-950 p-3 mb-4 rounded-lg text-center text-sm font-medium border border-blue-800 text-blue-300">
+            Current Game Status: Not connected
+        </div>
+
+        <!-- This is where all the messages from the server and client will be logged -->
+        <div class="bg-slate-900 p-4 rounded-lg mb-4 h-64 overflow-y-auto border border-slate-700" id="output">
+            <p class="text-sm text-slate-400">Ready to connect to the server...</p>
+        </div>
+
+        <div class="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+            <input type="text" id="messageInput" class="flex-grow p-3 rounded-lg bg-slate-700 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Type a message to the server...">
+            <button onclick="sendMessage()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-800">
+                Send Message
+            </button>
+        </div>
+
+        <div class="mt-4 flex flex-col sm:flex-row justify-center space-y-2 sm:space-y-0 sm:space-x-4">
+            <button onclick="changeStatus('Waiting for Players')" class="bg-yellow-500 hover:bg-yellow-600 text-slate-900 font-semibold py-2 px-4 rounded-lg transition-colors text-sm">
+                Set Status: Waiting
+            </button>
+            <button onclick="changeStatus('Game in Progress')" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm">
+                Set Status: In Progress
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const outputElement = document.getElementById('output');
+        const messageInput = document.getElementById('messageInput');
+        const gameStatusElement = document.getElementById('gameStatus');
+        let socket = null;
+
+        // Function to log messages to the UI
+        function log(message) {
+            const p = document.createElement('p');
+            p.textContent = message;
+            p.classList.add('text-sm', 'text-slate-200', 'mb-2', 'last:mb-0');
+            outputElement.appendChild(p);
+            outputElement.scrollTop = outputElement.scrollHeight; // Auto-scroll to the bottom
+        }
+
+        // Connect to the WebSocket server
+        function connect() {
+            // This is the IP address of your Docker container. If you are running locally, `localhost` should work.
+            socket = new WebSocket('ws://localhost:8080');
+
+            socket.onopen = function(e) {
+                log('Connected to WebSocket server!');
+                console.log('Connection established', e);
+            };
+
+            socket.onmessage = function(e) {
+                // The server now sends JSON data, so we must parse it
+                try {
+                    const data = JSON.parse(e.data);
+                    
+                    if (data.type === 'status' || data.type === 'status_update') {
+                        // Display the game status received from the server
+                        gameStatusElement.textContent = `Current Game Status: ${data.game_status || data.new_status}`;
+                        log(`Server status update: ${data.message}`);
+                    } else if (data.type === 'chat') {
+                        // Handle regular chat messages
+                        log(`Server: ${data.message}`);
+                    }
+                } catch (error) {
+                    // Fallback for non-JSON messages
+                    log('Server: ' + e.data);
+                    console.error('Failed to parse message as JSON:', error);
+                }
+            };
+
+            socket.onclose = function(e) {
+                if (e.wasClean) {
+                    log(`Connection closed cleanly, code=${e.code}, reason=${e.reason}`);
+                } else {
+                    log('Connection died unexpectedly');
+                }
+            };
+
+            socket.onerror = function(e) {
+                log('WebSocket Error: ' + e.message);
+                console.error('WebSocket Error', e);
+            };
+        }
+
+        // Send a message to the server
+        function sendMessage() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                log("Error: Not connected. Check the server.");
+                return;
+            }
+            const message = messageInput.value.trim();
+            if (message !== '') {
+                // Send a chat message with a defined type
+                socket.send(JSON.stringify({ type: 'chat', message: message }));
+                log('You: ' + message);
+                messageInput.value = '';
+            }
+        }
+        
+        // Function to send a message to change the game status
+        function changeStatus(status) {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                log("Error: Not connected. Check the server.");
+                return;
+            }
+            // Send a structured message to the server to change the status
+            socket.send(JSON.stringify({ type: 'set_status', status: status }));
+            log(`You requested a status change to: "${status}"`);
+        }
+
+        // Start the connection when the page loads
+        window.onload = function() {
+            connect();
+        };
+    </script>
+</body>
+</html>
